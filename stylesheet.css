@@ -1,5 +1,5 @@
 .containers-extension-menu {
-	width: 350px;
+	width: 380px;
 }
 
 .containers-extension-subMenuItem {
@@ -36,4 +36,8 @@
 
 .action-stats {
 	color: greenyellow;
+}
+
+.button:checked {
+  color: red;
 }

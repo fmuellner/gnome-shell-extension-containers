@@ -1,5 +1,6 @@
 "use strict";
 
+const Clutter = imports.gi.Clutter;
 const Main = imports.ui.main;
 const St = imports.gi.St;
 const Gio = imports.gi.Gio;
@@ -125,14 +126,76 @@ var ContainerSubMenuMenuItem = GObject.registerClass(
     class extends PopupMenu.PopupSubMenuMenuItem {
         _init(container) {
             super._init(container.name);
-            this.menu.addMenuItem(new PopupMenuItem("Status", container.status));
-            this.menu.addMenuItem(new PopupMenuItem("Id", container.id));
-            this.menu.addMenuItem(new PopupMenuItem("Image", container.image));
-            this.menu.addMenuItem(new PopupMenuItem("Command", container.command));
-            this.menu.addMenuItem(new PopupMenuItem("Created", container.createdAt));
-            this.menu.addMenuItem(new PopupMenuItem("Ports", container.ports));
+            const actions = new PopupMenu.PopupBaseMenuItem({reactive: false, can_focus: false});
+            const details = new PopupMenu.PopupMenuSection();
+            this.menu.addMenuItem(actions);
+            this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+            this.menu.addMenuItem(details);
+
+            const startBtn = addButton(actions, () => container.start(), "media-playback-start-symbolic");
+            const stopBtn = addButton(actions, () => container.stop(), "media-playback-stop-symbolic");
+            const restartBtn = addButton(actions, () => container.restart(), "system-reboot-symbolic");
+            const deleteBtn = addButton(actions, () => container.rm(), "user-trash-symbolic.symbolic");
+            const pauseBtn = addButton(
+                actions,
+                () => {
+                    if (container.status.split(" ")[0] === "running") {
+                        container.pause();
+                    }
+                    if (container.status.split(" ")[0] === "paused") {
+                        container.unpause();
+                    }
+                },
+                "media-playback-pause-symbolic"
+            );
+            pauseBtn.toggle_mode = true;
+
+            switch (container.status.split(" ")[0]) {
+            case "Exited":
+            case "exited":
+            case "Created":
+            case "created":
+            case "configured":
+            case "stopped": {
+                stopBtn.reactive = false;
+                pauseBtn.reactive = false;
+                this.insert_child_at_index(createIcon("media-playback-stop-symbolic", "status-stopped"), 1);
+                break;
+            }
+            case "Up":
+            case "running": {
+                startBtn.reactive = false;
+                deleteBtn.reactive = false;
+                pauseBtn.checked = false;
+                this.insert_child_at_index(createIcon("media-playback-start-symbolic", "status-running"), 1);
+                break;
+            }
+            case "Paused":
+            case "paused": {
+                this.insert_child_at_index(createIcon("media-playback-pause-symbolic", "status-paused"), 1);
+                break;
+            }
+            default:
+                this.insert_child_at_index(createIcon("action-unavailable-symbolic", "status-undefined"), 1);
+                break;
+            }
+
+            details.actor.add_child(new ContainerMenuItem(container.name, "Logs", () => container.logs()));
+            details.actor.add_child(new ContainerMenuItem(container.name, "Top", () => container.watchTop()));
+            details.actor.add_child(new ContainerMenuItem(container.name, "Shell", () => container.shell()));
+            details.actor.add_child(new ContainerMenuItem(container.name, "Statistics", () => container.stats()));
+
+            details.actor.add_child(new PopupMenu.PopupSeparatorMenuItem());
+            details.actor.add_child(new PopupMenuItem("Status", container.status));
+            if (container.startedAt !== null) {
+                details.actor.add_child(new PopupMenuItem("Started", container.startedAt));
+            }
+            details.actor.add_child(new PopupMenuItem("Image", container.image));
+            details.actor.add_child(new PopupMenuItem("Command", container.command));
+            details.actor.add_child(new PopupMenuItem("Created", container.createdAt));
+            details.actor.add_child(new PopupMenuItem("Ports", container.ports));
             const ipAddrMenuItem = new PopupMenuItem("IP Address", "");
-            this.menu.addMenuItem(ipAddrMenuItem);
+            details.actor.add_child(ipAddrMenuItem);
             this.inspected = false;
 
             // add more stats and info - inspect - SLOW
@@ -143,57 +206,6 @@ var ContainerSubMenuMenuItem = GObject.registerClass(
                     ipAddrMenuItem.label.set_text(`${ipAddrMenuItem.label.text} ${container.ipAddress}`);
                 }
             });
-
-            switch (container.status.split(" ")[0]) {
-            case "Exited":
-            case "exited":
-            case "Created":
-            case "created":
-            case "configured":
-            case "stopped": {
-                this.insert_child_at_index(createIcon("process-stop-symbolic", "status-stopped"), 1);
-                const startMeunItem = new ContainerMenuItem(container.name, "start", () => container.start());
-                startMeunItem.insert_child_at_index(createIcon("media-playback-start-symbolic", "status-start"), 1);
-                this.menu.addMenuItem(startMeunItem);
-                const rmMenuItem = new ContainerMenuItem(container.name, "rm", () => container.rm());
-                rmMenuItem.insert_child_at_index(createIcon("user-trash-symbolic", "status-remove"), 1);
-                this.menu.addMenuItem(rmMenuItem);
-                break;
-            }
-            case "Up":
-            case "running": {
-                this.menu.addMenuItem(new PopupMenuItem("Started", container.startedAt));
-                this.insert_child_at_index(createIcon("media-playback-start-symbolic", "status-running"), 1);
-                const pauseMenuIten = new ContainerMenuItem(container.name, "pause", () => container.pause());
-                pauseMenuIten.insert_child_at_index(createIcon("media-playback-pause-symbolic", "status-stopped"), 1);
-                this.menu.addMenuItem(pauseMenuIten);
-                const stopMenuItem = new ContainerMenuItem(container.name, "stop", () => container.stop());
-                stopMenuItem.insert_child_at_index(createIcon("process-stop-symbolic", "status-stopped"), 1);
-                this.menu.addMenuItem(stopMenuItem);
-                const restartMenuItem = new ContainerMenuItem(container.name, "restart", () => container.restart());
-                restartMenuItem.insert_child_at_index(createIcon("system-reboot-symbolic", "status-restart"), 1);
-                this.menu.addMenuItem(restartMenuItem);
-                this.menu.addMenuItem(createTopMenuItem(container));
-                this.menu.addMenuItem(createShellMenuItem(container));
-                this.menu.addMenuItem(createStatsMenuItem(container));
-                break;
-            }
-            case "Paused":
-            case "paused": {
-                this.insert_child_at_index(createIcon("media-playback-pause-symbolic", "status-paused"), 1);
-                const unpauseMenuItem = new ContainerMenuItem(container.name, "unpause", () => container.unpause());
-                unpauseMenuItem.insert_child_at_index(createIcon("media-playback-start-symbolic", "status-start"), 1);
-                this.menu.addMenuItem(unpauseMenuItem);
-                break;
-            }
-            default:
-                this.insert_child_at_index(createIcon("action-unavailable-symbolic", "status-undefined"), 1);
-                break;
-            }
-
-            // add log button
-            const logMenuItem = createLogMenuItem(container);
-            this.menu.addMenuItem(logMenuItem);
         }
     });
 
@@ -204,43 +216,30 @@ function setClipboard(text) {
     St.Clipboard.get_default().set_text(St.ClipboardType.PRIMARY, text);
 }
 
-/** creates a log menu items
+/** adds a button to item and returns it
  *
- * @param {Container} container is the target container
- */
-function createLogMenuItem(container) {
-    let i = new ContainerMenuItem(container.name, "logs", () => container.logs());
-    i.insert_child_at_index(createIcon("document-open-symbolic.symbolic", "action-logs"), 1);
-    return i;
-}
-
-/** creates a top menu item
- *
- * @param {Container} container is the target container
- */
-function createTopMenuItem(container) {
-    const i = new ContainerMenuItem(container.name, "top", () => container.watchTop());
-    i.insert_child_at_index(createIcon("view-reveal-symbolic.symbolic", "action-top"), 1);
-    return i;
-}
-
-/** creates a shell menu item
- *
- * @param {Container} container is the target container
- */
-function createShellMenuItem(container) {
-    const i = new ContainerMenuItem(container.name, "sh", () => container.shell());
-    i.insert_child_at_index(new St.Label({style_class: "action-sh", text: ">_"}), 1);
-    return i;
-}
-
-/** creates a stats menu item/
- *
- * @param {Container} container is the target container
- */
-function createStatsMenuItem(container) {
-    const i = new ContainerMenuItem(container.name, "stats", () => container.stats());
-    i.insert_child_at_index(new St.Label({style_class: "action-stats", text: "%"}), 1);
-    return i;
+ * @param item that the created button is added to
+ * @param command is the actions to executoed when clicking the button
+ * @param isconName is the icon name
+ * */
+function addButton(item, command, iconName) {
+    const btn = new St.Button({
+        reactive: true,
+        can_focus: true,
+        track_hover: true,
+        style_class: "button",
+        style: "padding-right: 10px; padding-left: 10px;",
+        x_expand: true,
+        x_align: Clutter.ActorAlign.CENTER,
+    });
+    btn.child = new St.Icon({
+        icon_name: iconName,
+        icon_size: 14,
+    });
+    btn.connect("clicked", () => {
+        command();
+    });
+    item.actor.add_child(btn);
+    return btn;
 }
 
